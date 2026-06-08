@@ -1,0 +1,11 @@
+attendance.db
+*.db-journal
+server.*.log
+node_modules/
+dist/
+.env
+uploads/*
+!uploads/.gitkeep
+!uploads/students/
+!uploads/students/.gitkeep
+.vscode/
