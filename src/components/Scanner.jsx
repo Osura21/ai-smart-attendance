@@ -1,24 +1,37 @@
 import { useEffect, useRef, useState } from 'react';
 import { getStudents, markAttendance } from '../api.js';
 
-const MODEL_URL = 'https://cdn.jsdelivr.net/gh/vladmandic/face-api/model';
+const MODEL_URL = '/model';
+let faceApiPromise;
 
-function waitForFaceApi() {
-  return new Promise((resolve, reject) => {
-    let tries = 0;
-    const timer = window.setInterval(() => {
-      if (window.faceapi) {
-        window.clearInterval(timer);
-        resolve(window.faceapi);
-      }
+function loadFaceApi() {
+  if (window.faceapi) return Promise.resolve(window.faceapi);
 
-      tries += 1;
-      if (tries > 80) {
-        window.clearInterval(timer);
-        reject(new Error('Face recognition library did not load.'));
-      }
-    }, 250);
-  });
+  if (!faceApiPromise) {
+    faceApiPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '/vendor/face-api.js';
+      script.async = true;
+      script.onload = () => {
+        if (window.faceapi) {
+          resolve(window.faceapi);
+        } else {
+          reject(new Error('Face recognition library loaded, but did not initialize.'));
+        }
+      };
+      script.onerror = () => reject(new Error('Could not load local face recognition library.'));
+      document.head.appendChild(script);
+    });
+  }
+
+  return faceApiPromise;
+}
+
+function withTimeout(promise, message, timeoutMs = 20000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => window.setTimeout(() => reject(new Error(message)), timeoutMs))
+  ]);
 }
 
 export default function Scanner({ onNavigateAdmin }) {
@@ -42,12 +55,15 @@ export default function Scanner({ onNavigateAdmin }) {
     setStatus({ message: 'Loading face recognition models...', type: 'idle' });
 
     try {
-      const faceapi = await waitForFaceApi();
-      await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+      const faceapi = await withTimeout(loadFaceApi(), 'Face recognition library loading is taking too long.');
+      setStatus({ message: 'Starting browser AI backend...', type: 'idle' });
+      await withTimeout(faceapi.tf.setBackend('cpu'), 'Could not start the browser AI backend.');
+      await faceapi.tf.ready();
+      await withTimeout(faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL), 'Face detector model loading is taking too long.');
       setStatus({ message: 'Loading face landmarks...', type: 'idle' });
-      await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+      await withTimeout(faceapi.nets.faceLandmark68TinyNet.loadFromUri(MODEL_URL), 'Face landmark model loading is taking too long.');
       setStatus({ message: 'Loading face recognition...', type: 'idle' });
-      await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+      await withTimeout(faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL), 'Face recognition model loading is taking too long.');
 
       streamRef.current = await navigator.mediaDevices.getUserMedia({ video: {} });
       videoRef.current.srcObject = streamRef.current;
@@ -81,7 +97,7 @@ export default function Scanner({ onNavigateAdmin }) {
 
         try {
           const detections = await faceapi.detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks()
+            .withFaceLandmarks(true)
             .withFaceDescriptors();
 
           displaySize = { width: videoRef.current.clientWidth, height: videoRef.current.clientHeight };
@@ -147,7 +163,7 @@ export default function Scanner({ onNavigateAdmin }) {
           const img = await faceapi.fetchImage(image.url);
           const detection = await faceapi
             .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks()
+            .withFaceLandmarks(true)
             .withFaceDescriptor();
 
           if (detection) descriptions.push(detection.descriptor);

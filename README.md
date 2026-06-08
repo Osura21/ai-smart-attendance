@@ -1,5 +1,5 @@
 # AI Smart Attendance System
-
+<!-- 
 A complete face recognition attendance project built with React, Express, and MySQL.
 
 ## Features
@@ -114,4 +114,4 @@ face-recognition-attendance/
 
 ## Notes
 
-The face recognition library and AI models are loaded from public CDNs in the browser, so the scanner needs internet access when those assets are not cached.
+The face recognition package is bundled with React and the required model files are served locally from `public/model`, so scanner startup does not depend on CDN model downloads.
